@@ -1,2 +1,4 @@
+flask
+flask-socketio
+eventlet
 
-# No external dependencies needed for Sudoku Battle Server
