@@ -246,7 +246,6 @@
 #     print(f"[SERVER START] Sudoku Multiplayer running on 0.0.0.0:{port}")
 #     socketio.run(app, host="0.0.0.0", port=port, debug=False)
 
-
 import os
 import time
 import threading
@@ -281,6 +280,7 @@ def handle_join(data):
     
     with lock:
         if room not in rooms:
+            # First player
             rooms[room] = [{"sid": sid, "name": name}]
             join_room(room)
             emit("waiting", {"msg": f"{name} is waiting for an opponent..."})
@@ -296,12 +296,14 @@ def handle_join(data):
             # Notify both players
             socketio.emit("start_game", {
                 "player": p1["name"],
-                "opponent": p2["name"]
+                "opponent": p2["name"],
+                "room": room
             }, to=p1["sid"])
             
             socketio.emit("start_game", {
                 "player": p2["name"],
-                "opponent": p1["name"]
+                "opponent": p1["name"],
+                "room": room
             }, to=p2["sid"])
             
             print(f"[MATCH FOUND] {p1['name']} vs {p2['name']} in room {room}")
@@ -318,16 +320,18 @@ def handle_move(data):
     """Forward move to opponent in the same room."""
     room = str(data.get("room"))
     x, y, val = data.get('x'), data.get('y'), data.get('val')
-    print(f"[MOVE] Room {room}: Player made move ({x}, {y}) = {val}")
+    player = data.get("player", "Unknown")
+    print(f"[MOVE] Room {room}: {player} made move ({x}, {y}) = {val}")
     
     # Broadcast to all clients in room except sender
-    emit("move", {
+    emit("opponent_move", {
         "x": x,
         "y": y,
         "val": val,
+        "player": player,
         "room": room
     }, room=room, include_self=False)
-    print(f"[MOVE BROADCAST] Sent to room {room}")
+    print(f"[MOVE BROADCAST] Sent to opponent in room {room}")
 
 
 # --- Handle score updates ---
@@ -337,15 +341,20 @@ def handle_score_update(data):
     room = str(data.get("room"))
     score = data.get('score', 0)
     correct = data.get('correct', 0)
-    print(f"[SCORE] Room {room}: Score={score}, Correct={correct}")
+    wrong = data.get('wrong', 0)
+    player = data.get("player", "Unknown")
     
-    # Broadcast to all clients in room except sender
-    emit("score_update", {
+    print(f"[SCORE] Room {room}: {player} Score={score}, Correct={correct}, Wrong={wrong}")
+    
+    # Broadcast to opponent
+    emit("opponent_score_update", {
         "score": score,
         "correct": correct,
+        "wrong": wrong,
+        "player": player,
         "room": room
     }, room=room, include_self=False)
-    print(f"[SCORE BROADCAST] Sent to room {room}")
+    print(f"[SCORE BROADCAST] Sent to opponent in room {room}")
 
 
 # --- Handle game over ---
@@ -353,8 +362,10 @@ def handle_score_update(data):
 def handle_game_over(data):
     """Notify opponent that game is over."""
     room = str(data.get("room"))
-    print(f"[GAME OVER] Room {room}")
-    emit("game_over", data, room=room, include_self=False)
+    player = data.get("player", "Unknown")
+    print(f"[GAME OVER] Room {room} — {player} finished the game.")
+    
+    emit("opponent_game_over", data, room=room, include_self=False)
 
 
 # --- Handle disconnect ---
@@ -364,7 +375,7 @@ def handle_disconnect():
     
     with lock:
         for room, players in list(rooms.items()):
-            for player in players:
+            for player in list(players):
                 if player["sid"] == sid:
                     name = player["name"]
                     players.remove(player)
