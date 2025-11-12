@@ -3,7 +3,8 @@ import threading
 import json
 
 HOST = "0.0.0.0"
-PORT = 5555
+PORT = int(os.environ.get("PORT", 5555))
+
 
 rooms = {}
 names = {}
